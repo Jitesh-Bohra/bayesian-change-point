@@ -21,29 +21,29 @@ with st.expander("📖 How to use this app", expanded=False):
     - **Step 3:** Add data points. The model calculates the **Marginal Likelihood** for every possible change-point $t_0$.
     """)
 
-# --- Sidebar: Parameters ---
+# --- Sidebar: Parameters (Defaults set from your screenshot) ---
 st.sidebar.header("1. Model Priors (Math Input)")
-u1_p = st.sidebar.slider("Prior Mean μ1", -10.0, 10.0, 5.0)
+u1_p = st.sidebar.slider("Prior Mean μ1", -10.0, 10.0, -10.0)
 u2_p = st.sidebar.slider("Prior Mean μ2", -10.0, 10.0, 10.0)
 sig0_p = st.sidebar.slider("Data Variance σ0²", 0.1, 10.0, 1.0)
-sig1_p = st.sidebar.slider("Prior Variance σ1²", 0.1, 10.0, 1.0)
-sig2_p = st.sidebar.slider("Prior Variance σ2²", 0.1, 10.0, 1.0)
+sig1_p = st.sidebar.slider("Prior Variance σ1²", 0.1, 10.0, 10.0)
+sig2_p = st.sidebar.slider("Prior Variance σ2²", 0.1, 10.0, 10.0)
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Ground Truth (Data Gen)")
-u1_a = st.sidebar.slider("Actual μ1", -10.0, 10.0, 5.0)
-u2_a = st.sidebar.slider("Actual μ2", -10.0, 10.0, 10.0)
-actual_var = st.sidebar.slider("Actual σ²", 0.1, 10.0, 1.0)
+u1_a = st.sidebar.slider("Actual μ1", -10.0, 10.0, -0.06)
+u2_a = st.sidebar.slider("Actual μ2", -10.0, 10.0, 6.01)
+actual_var = st.sidebar.slider("Actual σ²", 0.1, 10.0, 4.96)
 
 # --- Data Generation Buttons ---
 st.write("### 1. Real-Time Data Stream")
 c1, c2, c3 = st.columns(3)
 with c1:
-    if st.button("Generate Regime 1 Sample"):
+    if st.button(f"Generate Regime 1 Sample (μ={u1_a})"):
         st.session_state.y_vals.append(np.random.normal(u1_a, np.sqrt(actual_var)))
         st.session_state.regime_labels.append(1)
 with c2:
-    if st.button("Generate Regime 2 Sample"):
+    if st.button(f"Generate Regime 2 Sample (μ={u2_a})"):
         st.session_state.y_vals.append(np.random.normal(u2_a, np.sqrt(actual_var)))
         st.session_state.regime_labels.append(2)
 with c3:
