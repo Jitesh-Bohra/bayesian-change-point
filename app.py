@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- Page Config & Styling ---
+# --- Page Config ---
 st.set_page_config(page_title="Bayesian Change-Point Detection", layout="wide")
 
 # Initialize Session State
@@ -13,13 +13,12 @@ if 'regime_labels' not in st.session_state:
 
 # --- Header & User Guide ---
 st.title("📊 Robust Bayesian Change-Point Detection")
-with st.expander("📖 How to use this app & Mathematical Verification", expanded=False):
+with st.expander("📖 How to use this app", expanded=False):
     st.write("""
     This app performs **Sequential Bayesian Inference** to detect a shift in the process mean.
     - **Step 1:** Set your **Model Priors** in the sidebar. These represent your 'beliefs' before seeing data.
     - **Step 2:** Set the **Actual Ground Truth** for data generation.
     - **Step 3:** Add data points. The model calculates the **Marginal Likelihood** for every possible change-point $t_0$.
-    - **Math Note:** We integrate out the unknown means $\mu_1, \mu_2$ using Normal priors, resulting in a predictive distribution that accounts for both data noise ($\sigma_0^2$) and prior uncertainty ($\sigma_1^2, \sigma_2^2$).
     """)
 
 # --- Sidebar: Parameters ---
@@ -34,7 +33,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("2. Ground Truth (Data Gen)")
 u1_a = st.sidebar.slider("Actual μ1", -10.0, 10.0, 5.0)
 u2_a = st.sidebar.slider("Actual μ2", -10.0, 10.0, 10.0)
-# Updated slider to explicitly use Variance as requested
 actual_var = st.sidebar.slider("Actual σ²", 0.1, 10.0, 1.0)
 
 # --- Data Generation Buttons ---
@@ -59,7 +57,6 @@ def log_marginal_likelihood(data, mu0, tau2, sigma2):
     if m == 0: return 0
     sum_y = np.sum(data)
     sum_y2 = np.sum(data**2)
-    # Ratios for simplified calculation
     lambda_ratio = sigma2 / tau2
     
     term1 = - (m / 2) * np.log(2 * np.pi * sigma2)
@@ -77,10 +74,8 @@ if n > 1:
     
     for i, m in enumerate(ms):
         if m >= n:
-            # Entire sequence belongs to Regime 1
             log_post[i] = log_marginal_likelihood(y, u1_p, sig1_p, sig0_p)
         else:
-            # Sequence splits at m
             l1 = log_marginal_likelihood(y[:m], u1_p, sig1_p, sig0_p)
             l2 = log_marginal_likelihood(y[m:], u2_p, sig2_p, sig0_p)
             log_post[i] = l1 + l2
@@ -88,16 +83,24 @@ if n > 1:
     # Convert log-space to probabilities (Log-Sum-Exp Trick)
     probs = np.exp(log_post - np.max(log_post))
     probs /= np.sum(probs)
+    
+    # Statistical Summary
     post_mean_t0 = np.sum(ms * probs)
+    post_mode_t0 = ms[np.argmax(probs)]
+
+    # --- Metrics Display ---
+    st.write("### 2. Statistical Summary")
+    m1, m2 = st.columns(2)
+    m1.metric("Posterior Mean ($E[t_0 | y]$)", f"{post_mean_t0:.2f}")
+    m2.metric("Posterior Mode (MAP estimate)", f"{post_mode_t0}")
 
     # --- Visualization ---
-    st.write("### 2. Bayesian Posterior Analysis")
+    st.write("### 3. Bayesian Posterior Analysis")
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), gridspec_kw={'height_ratios': [1, 1.2]})
     
     # Plot 1: Formatted Data Sequence
     idx1 = np.where(regs == 1)[0]
     idx2 = np.where(regs == 2)[0]
-    
     ax1.plot(range(n), y, color='lightgray', linestyle='--', alpha=0.4, label="Sequence Connection")
     if len(idx1) > 0:
         ax1.scatter(idx1, y[idx1], color='#00d1b2', s=60, edgecolors='black', label="Regime 1", zorder=3)
@@ -105,7 +108,6 @@ if n > 1:
     if len(idx2) > 0:
         ax1.scatter(idx2, y[idx2], color='#ff3860', s=60, edgecolors='black', label="Regime 2", zorder=3)
         ax1.plot(idx2, y[idx2], color='#ff3860', alpha=0.6, linewidth=2)
-        
     ax1.set_title(f"Realized Observations (n={n})", loc='left', fontweight='bold')
     ax1.set_ylabel("Value $y_k$")
     ax1.legend(facecolor='white', framealpha=1)
@@ -114,10 +116,10 @@ if n > 1:
     # Plot 2: Posterior of t0
     ax2.bar(ms, probs, color='teal', alpha=0.5, width=0.8, label="Posterior Density $P(t_0 | y)$")
     ax2.axvline(post_mean_t0, color='#e74c3c', linestyle='--', linewidth=2.5, 
-                label=f"Posterior Mean: {post_mean_t0:.2f}")
+                label=f"Mean: {post_mean_t0:.2f}")
+    ax2.axvline(post_mode_t0, color='#f1c40f', linestyle=':', linewidth=2.5, 
+                label=f"Mode: {post_mode_t0}")
     
-    # Visual cues for the user
-    ax2.fill_between(ms, 0, probs, color='teal', alpha=0.1)
     ax2.set_title("Probability Distribution of the Change-Point $t_0$", loc='left', fontweight='bold')
     ax2.set_xlabel("Time Step (m)")
     ax2.set_ylabel("Probability")
