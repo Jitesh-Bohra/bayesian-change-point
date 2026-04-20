@@ -21,6 +21,7 @@ st.markdown("""
     - **Model Priors**: Set what the model *expects* (e.g., if you think the change is large, set $\mu_1$ and $\mu_2$ far apart).
     - **Ground Truth**: These values control the *actual* data being generated.
 2. **Feed the Model**: Click **'Generate Regime 1 Sample'** to start the stream. After a few points, click **'Generate Regime 2 Sample'** to simulate a structural break.
+3. **Analyze**: Monitor the metrics and plots to see how the model updates its belief about the change-point and regime parameters.
 ---
 """)
 
@@ -109,6 +110,16 @@ if n > 1:
     # Normalize weights using Log-Sum-Exp for stability
     weights = np.exp(log_post_t0 - np.max(log_post_t0))
     weights /= np.sum(weights)
+
+    # Calculate Posterior Mean and Mode of t0
+    post_mean_t0 = np.sum(ms * weights)
+    post_mode_t0 = ms[np.argmax(weights)]
+
+    # --- Metrics Display ---
+    st.write("#### Posterior Estimates for $t_0$")
+    m_col1, m_col2 = st.columns(2)
+    m_col1.metric("Posterior Mean ($E[t_0|y]$)", f"{post_mean_t0:.2f}")
+    m_col2.metric("Posterior Mode (MAP)", f"{int(post_mode_t0)}")
     
     # --- Rearranged Visualizations ---
     st.write("### 2. Analysis Results")
@@ -130,10 +141,12 @@ if n > 1:
 
         # Plot 2: Posterior Density of t0
         axes[1].bar(ms, weights, color='teal', alpha=0.6, width=0.8)
+        axes[1].axvline(post_mean_t0, color='red', linestyle='--', label=f"Mean: {post_mean_t0:.1f}")
         axes[1].set_title("2. Posterior Density of Change-Point $t_0$", fontweight='bold', loc='left')
         axes[1].set_xlabel("Time Step (m)")
         axes[1].set_ylabel("Probability")
         axes[1].set_xlim(0, 105)
+        axes[1].legend()
 
         # Plot 3: Posterior Density of u1 and u2 (Mixture Distribution)
         mu_grid = np.linspace(-15, 15, 500)
