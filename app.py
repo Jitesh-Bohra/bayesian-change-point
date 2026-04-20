@@ -1,9 +1,10 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import norm, invgamma
 
 # --- Page Config ---
-st.set_page_config(page_title="Bayesian Change-Point Detection", layout="wide")
+st.set_page_config(page_title="Bayesian Change-Point Analysis", layout="wide")
 
 # Initialize Session State
 if 'y_vals' not in st.session_state:
@@ -11,39 +12,35 @@ if 'y_vals' not in st.session_state:
 if 'regime_labels' not in st.session_state:
     st.session_state.regime_labels = []
 
-# --- Header & User Guide ---
-st.title("📊 Robust Bayesian Change-Point Detection")
-with st.expander("📖 How to use this app", expanded=False):
-    st.write("""
-    This app performs **Sequential Bayesian Inference** to detect a shift in the process mean.
-    - **Step 1:** Set your **Model Priors** in the sidebar. These represent your 'beliefs' before seeing data.
-    - **Step 2:** Set the **Actual Ground Truth** for data generation.
-    - **Step 3:** Add data points. The model calculates the **Marginal Likelihood** for every possible change-point $t_0$.
-    """)
+st.title("🔍 Full Bayesian Posterior Analysis")
+st.markdown("""
+This dashboard visualizes the joint uncertainty of the change-point and the regime parameters. 
+The continuous posteriors are computed as **Bayesian Mixtures** weighted by the probability of each $t_0$.
+""")
 
-# --- Sidebar: Parameters (Defaults set from your screenshot) ---
-st.sidebar.header("1. Model Priors (Math Input)")
+# --- Sidebar: Parameters ---
+st.sidebar.header("1. Model Priors")
 u1_p = st.sidebar.slider("Prior Mean μ1", -10.0, 10.0, -10.0)
 u2_p = st.sidebar.slider("Prior Mean μ2", -10.0, 10.0, 10.0)
-sig0_p = st.sidebar.slider("Data Variance σ0²", 0.1, 10.0, 1.0)
-sig1_p = st.sidebar.slider("Prior Variance σ1²", 0.1, 10.0, 10.0)
-sig2_p = st.sidebar.slider("Prior Variance σ2²", 0.1, 10.0, 10.0)
+sig0_p = st.sidebar.slider("Prior σ0² (Data Var)", 0.1, 10.0, 1.0)
+sig1_p = st.sidebar.slider("Prior σ1² (μ1 Var)", 0.1, 10.0, 10.0)
+sig2_p = st.sidebar.slider("Prior σ2² (μ2 Var)", 0.1, 10.0, 10.0)
 
 st.sidebar.markdown("---")
-st.sidebar.header("2. Ground Truth (Data Gen)")
+st.sidebar.header("2. Ground Truth")
 u1_a = st.sidebar.slider("Actual μ1", -10.0, 10.0, -0.06)
 u2_a = st.sidebar.slider("Actual μ2", -10.0, 10.0, 6.01)
 actual_var = st.sidebar.slider("Actual σ²", 0.1, 10.0, 4.96)
 
-# --- Data Generation Buttons ---
-st.write("### 1. Real-Time Data Stream")
+# --- Data Generation ---
+st.write("### 1. Data Stream")
 c1, c2, c3 = st.columns(3)
 with c1:
-    if st.button(f"Generate Regime 1 Sample (μ={u1_a})"):
+    if st.button("Generate Regime 1 Sample"):
         st.session_state.y_vals.append(np.random.normal(u1_a, np.sqrt(actual_var)))
         st.session_state.regime_labels.append(1)
 with c2:
-    if st.button(f"Generate Regime 2 Sample (μ={u2_a})"):
+    if st.button("Generate Regime 2 Sample"):
         st.session_state.y_vals.append(np.random.normal(u2_a, np.sqrt(actual_var)))
         st.session_state.regime_labels.append(2)
 with c3:
@@ -51,83 +48,109 @@ with c3:
         st.session_state.y_vals = []
         st.session_state.regime_labels = []
 
-# --- Mathematical Engine ---
+# --- Math Engine ---
 def log_marginal_likelihood(data, mu0, tau2, sigma2):
     m = len(data)
     if m == 0: return 0
+    lambda_ratio = sigma2 / tau2
     sum_y = np.sum(data)
     sum_y2 = np.sum(data**2)
-    lambda_ratio = sigma2 / tau2
-    
-    term1 = - (m / 2) * np.log(2 * np.pi * sigma2)
-    term2 = 0.5 * np.log(sigma2 / (m * tau2 + sigma2))
-    term3 = - (1 / (2 * sigma2)) * (sum_y2 + lambda_ratio * (mu0**2) - ((sum_y + lambda_ratio * mu0)**2) / (m + lambda_ratio))
-    return term1 + term2 + term3
+    t1 = - (m / 2) * np.log(2 * np.pi * sigma2)
+    t2 = 0.5 * np.log(sigma2 / (m * tau2 + sigma2))
+    t3 = - (1 / (2 * sigma2)) * (sum_y2 + lambda_ratio * (mu0**2) - ((sum_y + lambda_ratio * mu0)**2) / (m + lambda_ratio))
+    return t1 + t2 + t3
 
 y = np.array(st.session_state.y_vals)
-regs = np.array(st.session_state.regime_labels)
 n = len(y)
 
 if n > 1:
-    ms = np.arange(1, 100) # Hypothesized t0
-    log_post = np.zeros(len(ms))
+    ms = np.arange(1, 100)
+    log_post_t0 = np.zeros(len(ms))
+    
+    # Storage for conditional posterior parameters of mu1, mu2 given m
+    mu1_means, mu1_vars = [], []
+    mu2_means, mu2_vars = [], []
     
     for i, m in enumerate(ms):
+        # 1. t0 Posterior
         if m >= n:
-            log_post[i] = log_marginal_likelihood(y, u1_p, sig1_p, sig0_p)
+            log_post_t0[i] = log_marginal_likelihood(y, u1_p, sig1_p, sig0_p)
         else:
             l1 = log_marginal_likelihood(y[:m], u1_p, sig1_p, sig0_p)
             l2 = log_marginal_likelihood(y[m:], u2_p, sig2_p, sig0_p)
-            log_post[i] = l1 + l2
-            
-    # Convert log-space to probabilities (Log-Sum-Exp Trick)
-    probs = np.exp(log_post - np.max(log_post))
-    probs /= np.sum(probs)
+            log_post_t0[i] = l1 + l2
+        
+        # 2. Conditional Posteriors for Mu (Conjugate Normal-Normal)
+        # Regime 1
+        data1 = y if m >= n else y[:m]
+        prec_post1 = (1/sig1_p) + (len(data1)/sig0_p)
+        mu1_vars.append(1/prec_post1)
+        mu1_means.append((1/prec_post1) * ((u1_p/sig1_p) + (np.sum(data1)/sig0_p)))
+        
+        # Regime 2
+        data2 = y[m:] if m < n else np.array([])
+        if len(data2) > 0:
+            prec_post2 = (1/sig2_p) + (len(data2)/sig0_p)
+            mu2_vars.append(1/prec_post2)
+            mu2_means.append((1/prec_post2) * ((u2_p/sig2_p) + (np.sum(data2)/sig0_p)))
+        else:
+            mu2_means.append(u2_p) # Prior if no data
+            mu2_vars.append(sig2_p)
+
+    # Normalize t0 weights
+    weights = np.exp(log_post_t0 - np.max(log_post_t0))
+    weights /= np.sum(weights)
     
-    # Statistical Summary
-    post_mean_t0 = np.sum(ms * probs)
-    post_mode_t0 = ms[np.argmax(probs)]
-
-    # --- Metrics Display ---
-    st.write("### 2. Statistical Summary")
-    m1, m2 = st.columns(2)
-    m1.metric("Posterior Mean ($E[t_0 | y]$)", f"{post_mean_t0:.2f}")
-    m2.metric("Posterior Mode (MAP estimate)", f"{post_mode_t0}")
-
     # --- Visualization ---
-    st.write("### 3. Bayesian Posterior Analysis")
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), gridspec_kw={'height_ratios': [1, 1.2]})
+    st.write("### 2. Posterior Distributions")
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
-    # Plot 1: Formatted Data Sequence
-    idx1 = np.where(regs == 1)[0]
-    idx2 = np.where(regs == 2)[0]
-    ax1.plot(range(n), y, color='lightgray', linestyle='--', alpha=0.4, label="Sequence Connection")
-    if len(idx1) > 0:
-        ax1.scatter(idx1, y[idx1], color='#00d1b2', s=60, edgecolors='black', label="Regime 1", zorder=3)
-        ax1.plot(idx1, y[idx1], color='#00d1b2', alpha=0.6, linewidth=2)
-    if len(idx2) > 0:
-        ax1.scatter(idx2, y[idx2], color='#ff3860', s=60, edgecolors='black', label="Regime 2", zorder=3)
-        ax1.plot(idx2, y[idx2], color='#ff3860', alpha=0.6, linewidth=2)
-    ax1.set_title(f"Realized Observations (n={n})", loc='left', fontweight='bold')
-    ax1.set_ylabel("Value $y_k$")
-    ax1.legend(facecolor='white', framealpha=1)
-    ax1.grid(True, linestyle=':', alpha=0.6)
+    # A. t0 Posterior (Discrete)
+    axes[0, 0].bar(ms, weights, color='teal', alpha=0.6)
+    axes[0, 0].set_title("Posterior of Change-Point $t_0$")
+    axes[0, 0].set_xlabel("Time Index")
+    
+    # B. μ1 and μ2 Posteriors (Continuous Mixture)
+    mu_grid = np.linspace(-15, 15, 400)
+    pdf_mu1 = np.zeros_like(mu_grid)
+    pdf_mu2 = np.zeros_like(mu_grid)
+    
+    for i in range(len(ms)):
+        pdf_mu1 += weights[i] * norm.pdf(mu_grid, mu1_means[i], np.sqrt(mu1_vars[i]))
+        pdf_mu2 += weights[i] * norm.pdf(mu_grid, mu2_means[i], np.sqrt(mu2_vars[i]))
+        
+    axes[0, 1].plot(mu_grid, pdf_mu1, label="μ1 Posterior", color='#00d1b2', lw=2)
+    axes[0, 1].plot(mu_grid, pdf_mu2, label="μ2 Posterior", color='#ff3860', lw=2)
+    axes[0, 1].set_title("Posteriors of Regime Means $\mu_1, \mu_2$")
+    axes[0, 1].legend()
 
-    # Plot 2: Posterior of t0
-    ax2.bar(ms, probs, color='teal', alpha=0.5, width=0.8, label="Posterior Density $P(t_0 | y)$")
-    ax2.axvline(post_mean_t0, color='#e74c3c', linestyle='--', linewidth=2.5, 
-                label=f"Mean: {post_mean_t0:.2f}")
-    ax2.axvline(post_mode_t0, color='#f1c40f', linestyle=':', linewidth=2.5, 
-                label=f"Mode: {post_mode_t0}")
-    
-    ax2.set_title("Probability Distribution of the Change-Point $t_0$", loc='left', fontweight='bold')
-    ax2.set_xlabel("Time Step (m)")
-    ax2.set_ylabel("Probability")
-    ax2.set_xlim(0, 100)
-    ax2.set_ylim(0, max(probs)*1.2 if max(probs)>0 else 1)
-    ax2.legend()
-    ax2.grid(True, axis='y', alpha=0.3)
-    
+    # C. σ² Posterior (Scaled Inverse-Chi-Square / Inverse-Gamma)
+    # Using non-informative prior p(sigma2) ~ 1/sigma2 for simplicity
+    sig_grid = np.linspace(0.1, 15, 400)
+    pdf_sig = np.zeros_like(sig_grid)
+    for i, m in enumerate(ms):
+        # Degrees of freedom: n - 2 (estimating two means)
+        # Scaled sum of squares
+        d1 = y if m >= n else y[:m]
+        d2 = y[m:] if m < n else np.array([])
+        ss = np.sum((d1 - mu1_means[i])**2) + (np.sum((d2 - mu2_means[i])**2) if len(d2)>0 else 0)
+        # Inverse Gamma approximation for Sigma^2
+        pdf_sig += weights[i] * invgamma.pdf(sig_grid, a=n/2, scale=ss/2)
+        
+    axes[1, 0].plot(sig_grid, pdf_sig, color='purple', lw=2)
+    axes[1, 0].set_title("Posterior of Data Variance $\sigma^2$")
+    axes[1, 0].set_xlabel("$\sigma^2$ Value")
+
+    # D. Observations
+    regs = np.array(st.session_state.regime_labels)
+    idx1, idx2 = np.where(regs == 1)[0], np.where(regs == 2)[0]
+    axes[1, 1].plot(range(n), y, color='lightgray', linestyle='--', alpha=0.4)
+    axes[1, 1].scatter(idx1, y[idx1], color='#00d1b2', label="Regime 1")
+    axes[1, 1].scatter(idx2, y[idx2], color='#ff3860', label="Regime 2")
+    axes[1, 1].set_title("Data Sequence")
+    axes[1, 1].legend()
+
+    plt.tight_layout()
     st.pyplot(fig)
 else:
-    st.info("💡 **Awaiting Data:** Generate at least 2 points to start the Bayesian engine.")
+    st.info("💡 Awaiting data points to compute joint posteriors.")
