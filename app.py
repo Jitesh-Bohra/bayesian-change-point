@@ -19,7 +19,7 @@ st.markdown("""
 ### Quick Start Guide
 1. **Configure the Sidebar**: 
     - **Model Priors**: Set what the model *expects* (e.g., if you think the change is large, set $\mu_1$ and $\mu_2$ far apart).
-    - **Ground Truth**: These values control the *actual* data being generated.
+    - **True parameter values**: These values control the *actual* data being generated.
 2. **Feed the Model**: Click **'Generate Regime 1 Sample'** to start the stream. After a few points, click **'Generate Regime 2 Sample'** to simulate a structural break.
 ---
 """)
