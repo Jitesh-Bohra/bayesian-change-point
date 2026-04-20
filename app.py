@@ -13,10 +13,10 @@ if 'regime_labels' not in st.session_state:
     st.session_state.regime_labels = []
 
 # --- New User Instructions ---
-st.title("🔍 Full Bayesian Posterior Analysis")
+st.title("Bayesian Posterior Analysis")
 
 st.markdown("""
-### 🚀 Quick Start Guide
+### Quick Start Guide
 1. **Configure the Sidebar**: 
     - **Model Priors**: Set what the model *expects* (e.g., if you think the change is large, set $\mu_1$ and $\mu_2$ far apart).
     - **Ground Truth**: These values control the *actual* data being generated.
