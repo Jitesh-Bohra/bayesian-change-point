@@ -21,7 +21,6 @@ st.markdown("""
     - **Model Priors**: Set what the model *expects* (e.g., if you think the change is large, set $\mu_1$ and $\mu_2$ far apart).
     - **Ground Truth**: These values control the *actual* data being generated.
 2. **Feed the Model**: Click **'Generate Regime 1 Sample'** to start the stream. After a few points, click **'Generate Regime 2 Sample'** to simulate a structural break.
-3. **Analyze**: Monitor the metrics and plots to see how the model updates its belief about the change-point and regime parameters.
 ---
 """)
 
